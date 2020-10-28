@@ -12,6 +12,13 @@ const int TASK_CYCLE_MAX = 3
 int current_task = TASK_UNKNOWN; // 0 - TX, 1-3 - Register data only, -1 - unknown 
 int last_task = TASK_UNKNOWN;
 
+// TX_STATUS RECORD STRUCT //
+
+// SENSOR DATA STRUCT //
+
+// LoRa PACKET STRUCT //
+
+// Spot PACKET STRUCT //
 
 
 void setup() {
