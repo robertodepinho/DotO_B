@@ -1,13 +1,13 @@
 //Dvorak on the Ocean - Buoy
 
 // OPERATING PARAMETERS //
-const int LONG_SLEEP = 5  //in minutes - 12h = 720
-const int SHORT_SLEEP = 1 //in minutes - 3h = 180
+const int LONG_SLEEP = 5;  //in minutes - 12h = 720
+const int SHORT_SLEEP = 1; //in minutes - 3h = 180
 
 // TASK MODE CYCLE //
-const int TASK_UNKNOWN = -1
-const int TASK_TX = 0
-const int TASK_CYCLE_MAX = 3
+const int TASK_UNKNOWN = -1;
+const int TASK_TX = 0;
+const int TASK_CYCLE_MAX = 3;
 
 int current_task = TASK_UNKNOWN; // 0 - TX, 1-3 - Register data only, -1 - unknown 
 int last_task = TASK_UNKNOWN;
