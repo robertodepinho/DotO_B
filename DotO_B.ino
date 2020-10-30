@@ -4,11 +4,14 @@
 /*   INCLUDES & LIB SETUP
 
 */
+
+//using EEPROM for STATUS single record
+
 // include library to read and write from flash memory
 #include <EEPROM.h>
 
 // define the number of bytes you want to access
-#define EEPROM_SIZE 10240
+#define EEPROM_SIZE 4096
 
 //AXP Power & I2C Comm
 #include <Wire.h>
@@ -24,6 +27,7 @@ const uint8_t i2c_scl = 22;
 const boolean INITIAL_MODE = false;  //Set to true for memory cleanup - 1st time run
 const int LONG_SLEEP = 5;  //in minutes - 12h = 720
 const int SHORT_SLEEP = 1; //in minutes - 3h = 180
+const int DEBUG_LEVEL = 2; //0 - 1 - 2 - 3
 
 // TASK MODE CYCLE //
 // 0 - TX, 1-3 - Register data only, -1 - unknown
@@ -103,7 +107,8 @@ void write_sensor_data() {
 }
 
 unsigned long get_sensor_data_addr(unsigned int data_index) {
-  unsigned long  sensor_data_addr = sizeof(doto_status_type) + 1024 + data_index * sizeof(sensor_data_type);
+  //add round robin logic
+  unsigned long  sensor_data_addr = 2* sizeof(doto_status_type) + 0 + data_index * sizeof(sensor_data_type);
   return (sensor_data_addr);
 }
 
@@ -123,7 +128,7 @@ void dump_sensor_data(sensor_data_type sd) {
 void dump_all_sensor_data() {
   
   char buffer_record[sizeof(sensor_data_type)];
-  for (int i = current_status.data_index-5; i < current_status.data_index; i++) {
+  for (int i = 0; i <= current_status.data_index; i++) {
     if (eeprom_ok) {
       Serial.print("i:");
       Serial.println(i);
@@ -195,22 +200,29 @@ void initial_setup() {
   EEPROM.writeBytes(0, &initial_status, sizeof(initial_status));
   EEPROM.commit();
 
-
 }
 
 void setup() {
 
   Serial.begin(115200);
+  
+  
 
   if (INITIAL_MODE == true) {
     initial_setup();
   }
 
   //Init EEPROM
+  Serial.print("**** MEMORY");
   eeprom_ok = EEPROM.begin(EEPROM_SIZE);
   Serial.print("eeprom_ok:");
   Serial.println(eeprom_ok);
+  Serial.print("doto_status_type:");
+  Serial.println(sizeof(doto_status_type));
+  Serial.print("sensor_data_type:");
+  Serial.println(sizeof(sensor_data_type));
   
+   
   //Init I2C
   Wire.begin(i2c_sda, i2c_scl);  //Init I2C
 
@@ -224,7 +236,6 @@ void setup() {
   }
 
 
-
 }
 
 
@@ -236,21 +247,21 @@ void loop() {
   update_status();
 
 
-
-
   // B - GET SENSOR DATA
   sensor_data.in_temp = get_in_temp();
   sensor_data.in_batt = get_in_batt();
   write_sensor_data();
   
-  dump_sensor_data(sensor_data);
-  //dump_all_sensor_data();
-  sensor_data_type sd;
-  Serial.print("read addr:");
-  Serial.println(get_sensor_data_addr(current_status.data_index));
-  EEPROM.readBytes(get_sensor_data_addr(current_status.data_index), &sd, sizeof(sensor_data_type));
-  Serial.println(sd.in_temp);
+  if(DEBUG_LEVEL>1) dump_sensor_data(sensor_data);
+  if(DEBUG_LEVEL>2) dump_all_sensor_data();
   
+  
+//  sensor_data_type sd;
+//   Serial.print("read addr:");
+//  Serial.println(get_sensor_data_addr(current_status.data_index));
+//  EEPROM.readBytes(get_sensor_data_addr(current_status.data_index), &sd, sizeof(sensor_data_type));
+//  Serial.println(sd.in_temp);
+//  
   delay(20000);
 
   // C - SEND WITH LORAWAN - ALL TASK CYCLE MODES
