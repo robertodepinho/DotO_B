@@ -5,13 +5,14 @@
 
 */
 
-//using EEPROM for STATUS single record & SENSOR DATA 
+//using EEPROM for STATUS single record & SENSOR DATA
 
 // include library to read and write from flash memory
 #include <EEPROM.h>
 
 // define the number of bytes you want to access
 #define EEPROM_SIZE 4096
+#define MAX_INDEX 100
 
 //AXP Power & I2C Comm
 #include <Wire.h>
@@ -20,7 +21,24 @@ AXP20X_Class axp;
 const uint8_t i2c_sda = 21;
 const uint8_t i2c_scl = 22;
 
+/*
+   LORA
+*/
+//SENDER
+#include <SPI.h>
+#include <LoRa.h>
 
+#define SCK     5    // GPIO5  -- SX1278's SCK
+#define MISO    19   // GPIO19 -- SX1278's MISnO
+#define MOSI    27   // GPIO27 -- SX1278's MOSI
+#define SS      18   // GPIO18 -- SX1278's CS
+#define RST     14   // GPIO14 -- SX1278's RESET
+#define DI0     26   // GPIO26 -- SX1278's IRQ(Interrupt Request)
+#define BAND  915E6
+
+String rssi = "RSSI --";
+String packSize = "--";
+String packet ;
 
 
 // OPERATING PARAMETERS //
@@ -51,6 +69,7 @@ doto_status_type current_status;
 
 boolean eeprom_ok = false;
 boolean axp_ok = false;
+boolean lora_ok = false;
 
 // SENSOR DATA STRUCT //
 typedef struct {
@@ -97,7 +116,9 @@ float get_in_batt() {
 
 void write_sensor_data() {
   if (eeprom_ok) {
-    sensor_data.index = ++current_status.data_index;
+    current_status.data_index++;
+    if (current_status.data_index > MAX_INDEX) current_status.data_index = 0;
+    sensor_data.index = current_status.data_index;
     unsigned long sensor_data_addr = get_sensor_data_addr(sensor_data.index);
     Serial.print("write addr:");
     Serial.println(sensor_data_addr);
@@ -108,7 +129,7 @@ void write_sensor_data() {
 
 unsigned long get_sensor_data_addr(unsigned int data_index) {
   //add round robin logic
-  unsigned long  sensor_data_addr = 2* sizeof(doto_status_type) + 0 + data_index * sizeof(sensor_data_type);
+  unsigned long  sensor_data_addr = 2 * sizeof(doto_status_type) + 0 + data_index * sizeof(sensor_data_type);
   return (sensor_data_addr);
 }
 
@@ -126,7 +147,7 @@ void dump_sensor_data(sensor_data_type sd) {
 }
 
 void dump_all_sensor_data() {
-  
+
   char buffer_record[sizeof(sensor_data_type)];
   for (int i = 0; i <= current_status.data_index; i++) {
     if (eeprom_ok) {
@@ -191,6 +212,19 @@ void write_status() {
 
 
 /*
+   LORA
+*/
+void send_lora(int counter) {
+  Serial.print("Sending LoRa:");
+  Serial.println(LoRa.beginPacket());
+  Serial.println(LoRa.print("hello "));
+  Serial.println(LoRa.print(counter));
+  Serial.println(LoRa.endPacket());
+
+}
+
+
+/*
    SETUP
 */
 void initial_setup() {
@@ -204,16 +238,18 @@ void initial_setup() {
 
 void setup() {
 
-  Serial.begin(115200);
+  if (DEBUG_LEVEL > 0) {
+    Serial.begin(115200);
+    while (!Serial);
+  }
+  Serial.println();
   
-  
-
   if (INITIAL_MODE == true) {
     initial_setup();
   }
 
   //Init EEPROM
-  Serial.print("**** MEMORY");
+  Serial.println("**** MEMORY");
   eeprom_ok = EEPROM.begin(EEPROM_SIZE);
   Serial.print("eeprom_ok:");
   Serial.println(eeprom_ok);
@@ -221,8 +257,26 @@ void setup() {
   Serial.println(sizeof(doto_status_type));
   Serial.print("sensor_data_type:");
   Serial.println(sizeof(sensor_data_type));
+
+
+  //LORA
+  Serial.println("LoRa Begin");
+  SPI.begin(SCK, MISO, MOSI, SS);
+  LoRa.setPins(SS,RST,DI0);
+  int try_count = 0;
+  while (!LoRa.begin(BAND) & try_count < 30) {
+    Serial.print(try_count);
+    Serial.println(" - Starting LoRa failed!");
+    try_count++;
+    delay(2000);
+  }
+  delay(1500);
+  if (try_count < 29){
+    lora_ok = true;
+    Serial.println("LoRa ok");
+  }
   
-   
+
   //Init I2C
   Wire.begin(i2c_sda, i2c_scl);  //Init I2C
 
@@ -235,8 +289,15 @@ void setup() {
     axp_ok = true;
   }
 
+  //Power on parts
+  axp.setPowerOutPut(AXP192_LDO2, AXP202_ON);
+  axp.setPowerOutPut(AXP192_LDO3, AXP202_ON);
+  axp.setPowerOutPut(AXP192_DCDC2, AXP202_ON);
+  axp.setPowerOutPut(AXP192_EXTEN, AXP202_ON);
+  axp.setPowerOutPut(AXP192_DCDC1, AXP202_ON);
 
 }
+
 
 
 void loop() {
@@ -251,18 +312,20 @@ void loop() {
   sensor_data.in_temp = get_in_temp();
   sensor_data.in_batt = get_in_batt();
   write_sensor_data();
-  
-  if(DEBUG_LEVEL>1) dump_sensor_data(sensor_data);
-  if(DEBUG_LEVEL>2) dump_all_sensor_data();
-  
-  
-  delay(20000);
+
+  if (DEBUG_LEVEL > 1) dump_sensor_data(sensor_data);
+  if (DEBUG_LEVEL > 2) dump_all_sensor_data();
+
+
+
 
   // C - SEND WITH LORAWAN - ALL TASK CYCLE MODES
   // C.1 - REGISTER TX_STATUS / SENSOR_DATA
   // C.2 - SET SHORT_SLEEP
 
   // D - SEND WITH DIRECT LORA - ALL TASK CYCLE MODES
+  send_lora(current_status.data_index);
+  delay(10000);
   // D.1 - WAIT FOR ACK
   // D.2 - REGISTER TX_STATUS / SENSOR_DATA
   // D.3 - SET SHORT_SLEEP
