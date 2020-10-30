@@ -5,7 +5,7 @@
 
 */
 
-//using EEPROM for STATUS single record
+//using EEPROM for STATUS single record & SENSOR DATA 
 
 // include library to read and write from flash memory
 #include <EEPROM.h>
@@ -256,12 +256,6 @@ void loop() {
   if(DEBUG_LEVEL>2) dump_all_sensor_data();
   
   
-//  sensor_data_type sd;
-//   Serial.print("read addr:");
-//  Serial.println(get_sensor_data_addr(current_status.data_index));
-//  EEPROM.readBytes(get_sensor_data_addr(current_status.data_index), &sd, sizeof(sensor_data_type));
-//  Serial.println(sd.in_temp);
-//  
   delay(20000);
 
   // C - SEND WITH LORAWAN - ALL TASK CYCLE MODES
