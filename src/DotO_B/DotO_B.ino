@@ -12,6 +12,8 @@ const int DEBUG_LEVEL = 2; //0 - 1 - 2 - 3
     WIRES - GPIO - PIN
 */
 const int  PIN_TEMP_SENSOR = 15;
+const int  PIN_LIGHT_SENSOR = 25;
+
 
 
 /*   INCLUDES & LIB SETUP
@@ -87,11 +89,6 @@ const byte TASK_CYCLE_MAX = 3;
     GLOBAL STATUS & DATA
 */
 
-boolean eeprom_ok = false;
-boolean axp_ok = false;
-boolean lora_ok = false;
-boolean rtc_ok = false;
-boolean out_temp_ok = false;
 
 doto_status_type last_status;
 doto_status_type current_status;
@@ -107,7 +104,7 @@ sensor_data_type sensor_data;
 */
 float get_in_temp() {
   float temp = 1e-10;
-  if (axp_ok) {
+  if (current_status.axp_ok) {
     temp =  axp.getTemp();
     Serial.print("Internal Temp: ");
     Serial.print(temp);
@@ -119,7 +116,7 @@ float get_in_temp() {
 // Get internal battery voltage
 float get_in_batt() {
   float batt = 1e-10;
-  if (axp_ok) {
+  if (current_status.axp_ok) {
     batt =  axp.getBattVoltage();
     Serial.print("BAT Volate:");
     Serial.print(axp.getBattVoltage());
@@ -158,14 +155,14 @@ DateTime millis_to_datetime(long millis_time) {
 }
 
 DateTime get_date_time() {
-  if (rtc_ok) {
+  if (current_status.rtc_ok) {
     return (rtc.now());
   } else return (millis_to_datetime(millis()));
 }
 
 float get_out_temp() {
 
-  if (out_temp_ok) {
+  if (current_status.out_temp_ok) {
     long start = millis();
     out_temp_sensor.requestTemperatures();
     while (!out_temp_sensor.isConversionComplete() & (millis()-start) < 10000);
@@ -175,8 +172,15 @@ float get_out_temp() {
 
 }
 
+unsigned int get_light() {
+
+  return (analogRead(PIN_LIGHT_SENSOR));
+
+}
+
+
 void write_sensor_data() {
-  if (eeprom_ok) {
+  if (current_status.eeprom_ok) {
 
     sensor_data.index = current_status.data_index;
     current_status.data_index++;
@@ -200,7 +204,7 @@ void dump_all_sensor_data() {
 
   char buffer_record[sizeof(sensor_data_type)];
   for (int i = 0; i <= current_status.data_index; i++) {
-    if (eeprom_ok) {
+    if (current_status.eeprom_ok) {
       Serial.print("i:");
       Serial.println(i);
       sensor_data_type sd;
@@ -234,7 +238,7 @@ void update_status() {
 
 
 void write_status() {
-  if (eeprom_ok) {
+  if (current_status.eeprom_ok) {
     EEPROM.writeBytes(0, &current_status, sizeof(doto_status_type));
     EEPROM.commit();
   }
@@ -283,9 +287,9 @@ void setup() {
 
   //Init EEPROM
   Serial.println("**** MEMORY");
-  eeprom_ok = EEPROM.begin(EEPROM_SIZE);
+  current_status.eeprom_ok = EEPROM.begin(EEPROM_SIZE);
   Serial.print("eeprom_ok:");
-  Serial.println(eeprom_ok);
+  Serial.println(current_status.eeprom_ok);
   Serial.print("doto_status_type:");
   Serial.println(sizeof(doto_status_type));
   Serial.print("sensor_data_type:");
@@ -306,7 +310,7 @@ void setup() {
   }
   delay(1500);
   if (try_count < 29) {
-    lora_ok = true;
+    current_status.lora_ok = true;
     Serial.println("LoRa ok");
   }
 
@@ -318,24 +322,32 @@ void setup() {
   int ret = axp.begin(Wire, AXP192_SLAVE_ADDRESS);
   if (ret == AXP_FAIL) {
     Serial.println("AXP Power begin failed");
-    axp_ok = false;
+    current_status.axp_ok = false;
   } else {
-    axp_ok = true;
+    Serial.println("AXP Power begin ok");
+    current_status.axp_ok = true;
   }
 
 
   //Init RTC
   if (! rtc.begin()) {
     Serial.println("Couldn't find RTC");
-    rtc_ok = false;
-  } else rtc_ok = true;
+    current_status.rtc_ok = false;
+  } else {
+    Serial.println("RTC ok");
+    current_status.rtc_ok = true;
+  }
 
   //Init Temp Sensor
   if (out_temp_sensor.begin() == false)
   {
     Serial.println("Error: Could not find temperature sensor.");
-    out_temp_ok = false;
-  } else out_temp_ok = true;
+    current_status.out_temp_ok = false;
+  } else {
+    Serial.println("Temperature sensor ok");
+    out_temp_sensor.setResolution(10);
+    current_status.out_temp_ok = true;
+  }
 
 
 
@@ -356,7 +368,7 @@ void loop() {
 
   // A - GET LAST DotO LAST STATUS & SET TASK
   //add   // if(last_tx_time > 12hs ago) current_task = TASK_TX
-  if (eeprom_ok) EEPROM.readBytes(0, &last_status, sizeof(doto_status_type));
+  if (current_status.eeprom_ok) EEPROM.readBytes(0, &last_status, sizeof(doto_status_type));
   update_status();
 
 
@@ -365,6 +377,7 @@ void loop() {
   sensor_data.in_temp = get_in_temp();
   sensor_data.out_temp = get_out_temp();
   sensor_data.in_batt = get_in_batt();
+  sensor_data.light = get_light();
   
   write_sensor_data();
 
