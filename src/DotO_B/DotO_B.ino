@@ -1,6 +1,19 @@
 //Dvorak on the Ocean - Buoy
 
 
+// OPERATING PARAMETERS //
+const boolean INITIAL_MODE = false;  //Set to true for memory cleanup - 1st time run
+const int LONG_SLEEP = 5;  //in minutes - 12h = 720
+const int SHORT_SLEEP = 1; //in minutes - 3h = 180
+const int DEBUG_LEVEL = 2; //0 - 1 - 2 - 3
+
+
+/*
+    WIRES - GPIO - PIN
+*/
+const int  PIN_TEMP_SENSOR = 15;
+
+
 /*   INCLUDES & LIB SETUP
 
 */
@@ -40,12 +53,23 @@ String rssi = "RSSI --";
 String packSize = "--";
 String packet ;
 
+/*
+   RTC
+*/
+#include <RTClib.h>
 
-// OPERATING PARAMETERS //
-const boolean INITIAL_MODE = false;  //Set to true for memory cleanup - 1st time run
-const int LONG_SLEEP = 5;  //in minutes - 12h = 720
-const int SHORT_SLEEP = 1; //in minutes - 3h = 180
-const int DEBUG_LEVEL = 2; //0 - 1 - 2 - 3
+RTC_DS3231 rtc;
+
+/*
+   OUT TEMP SENSOR
+*/
+#include <OneWire.h>
+#include <DS18B20.h>
+
+
+OneWire oneWire(PIN_TEMP_SENSOR );
+DS18B20 out_temp_sensor(&oneWire);
+
 
 // TASK MODE CYCLE //
 // 0 - TX, 1-3 - Register data only, -1 - unknown
@@ -53,36 +77,26 @@ const byte TASK_UNKNOWN = -1;
 const byte TASK_TX = 0;
 const byte TASK_CYCLE_MAX = 3;
 
+/*
+   STRUCTS
+*/
+#include <DotO_structs.h>
 
-// STATUS RECORD STRUCT //
-typedef struct {
-  byte previous_task = TASK_UNKNOWN ;
-  byte task = TASK_UNKNOWN;
-  unsigned int cycle_count = 0;
-  unsigned int data_index = -1;
-  //add last tx time
-  //add txt success
-} doto_status_type;
 
-doto_status_type last_status;
-doto_status_type current_status;
+/*
+    GLOBAL STATUS & DATA
+*/
 
 boolean eeprom_ok = false;
 boolean axp_ok = false;
 boolean lora_ok = false;
+boolean rtc_ok = false;
+boolean out_temp_ok = false;
 
-// SENSOR DATA STRUCT //
-typedef struct {
-  unsigned int index = -1;
-  boolean tx_ok = false;
-  boolean tx_lora = false;
-  boolean tx_lorawan = false;
-  boolean tx_spot = false;
-  float in_temp = 1e-20;
-  float in_batt = 1e-20;
-} sensor_data_type;
-
+doto_status_type last_status;
+doto_status_type current_status;
 sensor_data_type sensor_data;
+
 // LoRa PACKET STRUCT //
 
 // Spot PACKET STRUCT //
@@ -114,11 +128,60 @@ float get_in_batt() {
   return (batt);
 }
 
+
+/*
+   DATETIME
+*/
+// macros from DateTime.h
+/* Useful Constants */
+#define SECS_PER_MIN  (60UL)
+#define SECS_PER_HOUR (3600UL)
+#define SECS_PER_DAY  (SECS_PER_HOUR * 24L)
+
+/* Useful Macros for getting elapsed time */
+#define numberOfSeconds(_time_) (_time_ % SECS_PER_MIN)
+#define numberOfMinutes(_time_) ((_time_ / SECS_PER_MIN) % SECS_PER_MIN)
+#define numberOfHours(_time_) (( _time_% SECS_PER_DAY) / SECS_PER_HOUR)
+#define elapsedDays(_time_) ( _time_ / SECS_PER_DAY)
+DateTime millis_to_datetime(long millis_time) {
+  long val = millis_time / 1000;
+  int hours = numberOfHours(val);
+  int minutes = numberOfMinutes(val);
+  int seconds = numberOfSeconds(val);
+  Serial.println("millis to datetime");
+  Serial.println(val);
+  Serial.println(hours);
+  Serial.println(minutes);
+  Serial.println(seconds);
+  Serial.println(hours % 24);
+  return (DateTime(2000, 1, 1, hours % 24, minutes, seconds));
+}
+
+DateTime get_date_time() {
+  if (rtc_ok) {
+    return (rtc.now());
+  } else return (millis_to_datetime(millis()));
+}
+
+float get_out_temp() {
+
+  if (out_temp_ok) {
+    long start = millis();
+    out_temp_sensor.requestTemperatures();
+    while (!out_temp_sensor.isConversionComplete() & (millis()-start) < 10000);
+    float temperature = out_temp_sensor.getTempC();
+    return (temperature);
+  } else return (-999);
+
+}
+
 void write_sensor_data() {
   if (eeprom_ok) {
+
+    sensor_data.index = current_status.data_index;
     current_status.data_index++;
     if (current_status.data_index > MAX_INDEX) current_status.data_index = 0;
-    sensor_data.index = current_status.data_index;
+
     unsigned long sensor_data_addr = get_sensor_data_addr(sensor_data.index);
     Serial.print("write addr:");
     Serial.println(sensor_data_addr);
@@ -128,23 +191,10 @@ void write_sensor_data() {
 }
 
 unsigned long get_sensor_data_addr(unsigned int data_index) {
-  //add round robin logic
   unsigned long  sensor_data_addr = 2 * sizeof(doto_status_type) + 0 + data_index * sizeof(sensor_data_type);
   return (sensor_data_addr);
 }
 
-void dump_sensor_data(sensor_data_type sd) {
-  Serial.println("-----");
-  Serial.print("Index:");
-  Serial.println(sd.index);
-  Serial.print("TX all, lora, lorawan, spot:");
-  Serial.print(sd.tx_ok); Serial.print(sd.tx_lora); Serial.print(sd.tx_lorawan); Serial.println(sd.tx_spot);
-  Serial.print("Internal Temp:");
-  Serial.println(sd.in_temp);
-  Serial.print("Internal Batt:");
-  Serial.println(sd.in_batt);
-  Serial.println("-----");
-}
 
 void dump_all_sensor_data() {
 
@@ -167,25 +217,6 @@ void dump_all_sensor_data() {
 /*
    STATUS
 */
-void dump_status(doto_status_type  st) {
-  byte previous_task;
-  byte task;
-  unsigned int cycle_count;
-  unsigned int data_index;
-  Serial.println("**** STATUS ****");
-  Serial.print("Previous:");
-  Serial.println(st.previous_task);
-  Serial.print("Task:");
-  Serial.println(st.task);
-  Serial.print("Cycle count:");
-  Serial.println(st.cycle_count);
-  Serial.print("Data index:");
-  Serial.println(st.data_index);
-  Serial.println(TASK_UNKNOWN);
-
-
-
-}
 
 void update_status() {
   current_status.previous_task = last_status.task;
@@ -214,11 +245,13 @@ void write_status() {
 /*
    LORA
 */
-void send_lora(int counter) {
+void send_lora(doto_status_type doto_status, sensor_data_type sensor_data ) {
   Serial.print("Sending LoRa:");
   Serial.println(LoRa.beginPacket());
-  Serial.println(LoRa.print("hello "));
-  Serial.println(LoRa.print(counter));
+  Serial.println(LoRa.print("DotO_B"));
+  Serial.println(
+    LoRa.write((uint8_t*)&doto_status, sizeof(doto_status_type))
+  );
   Serial.println(LoRa.endPacket());
 
 }
@@ -243,7 +276,7 @@ void setup() {
     while (!Serial);
   }
   Serial.println();
-  
+
   if (INITIAL_MODE == true) {
     initial_setup();
   }
@@ -257,12 +290,13 @@ void setup() {
   Serial.println(sizeof(doto_status_type));
   Serial.print("sensor_data_type:");
   Serial.println(sizeof(sensor_data_type));
-
+  Serial.println("**** END MEMORY INIT");
+  
 
   //LORA
   Serial.println("LoRa Begin");
   SPI.begin(SCK, MISO, MOSI, SS);
-  LoRa.setPins(SS,RST,DI0);
+  LoRa.setPins(SS, RST, DI0);
   int try_count = 0;
   while (!LoRa.begin(BAND) & try_count < 30) {
     Serial.print(try_count);
@@ -271,11 +305,11 @@ void setup() {
     delay(2000);
   }
   delay(1500);
-  if (try_count < 29){
+  if (try_count < 29) {
     lora_ok = true;
     Serial.println("LoRa ok");
   }
-  
+
 
   //Init I2C
   Wire.begin(i2c_sda, i2c_scl);  //Init I2C
@@ -289,12 +323,30 @@ void setup() {
     axp_ok = true;
   }
 
+
+  //Init RTC
+  if (! rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    rtc_ok = false;
+  } else rtc_ok = true;
+
+  //Init Temp Sensor
+  if (out_temp_sensor.begin() == false)
+  {
+    Serial.println("Error: Could not find temperature sensor.");
+    out_temp_ok = false;
+  } else out_temp_ok = true;
+
+
+
   //Power on parts
   axp.setPowerOutPut(AXP192_LDO2, AXP202_ON);
   axp.setPowerOutPut(AXP192_LDO3, AXP202_ON);
   axp.setPowerOutPut(AXP192_DCDC2, AXP202_ON);
   axp.setPowerOutPut(AXP192_EXTEN, AXP202_ON);
   axp.setPowerOutPut(AXP192_DCDC1, AXP202_ON);
+
+  
 
 }
 
@@ -309,8 +361,11 @@ void loop() {
 
 
   // B - GET SENSOR DATA
+  sensor_data.date_time = get_date_time();
   sensor_data.in_temp = get_in_temp();
+  sensor_data.out_temp = get_out_temp();
   sensor_data.in_batt = get_in_batt();
+  
   write_sensor_data();
 
   if (DEBUG_LEVEL > 1) dump_sensor_data(sensor_data);
@@ -324,7 +379,7 @@ void loop() {
   // C.2 - SET SHORT_SLEEP
 
   // D - SEND WITH DIRECT LORA - ALL TASK CYCLE MODES
-  send_lora(current_status.data_index);
+  send_lora(current_status, sensor_data);
   delay(10000);
   // D.1 - WAIT FOR ACK
   // D.2 - REGISTER TX_STATUS / SENSOR_DATA
