@@ -49,6 +49,7 @@ typedef struct {
   float in_temp = 1e-20;
   float out_temp = 1e-20;
   float in_batt = 1e-20;
+  float out_batt = 1e-20;
   unsigned int light;
   
 } sensor_data_type;
@@ -88,6 +89,8 @@ void dump_sensor_data(sensor_data_type sd) {
   Serial.println(sd.out_temp);
   Serial.print("Internal Batt:");
   Serial.println(sd.in_batt);
+  Serial.print("External Batt:");
+  Serial.println(sd.out_batt);
   Serial.print("Light:");
   Serial.println(sd.light);
   
@@ -95,4 +98,3 @@ void dump_sensor_data(sensor_data_type sd) {
 }
 
 //hello
-

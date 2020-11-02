@@ -13,7 +13,7 @@ const int DEBUG_LEVEL = 3; //0 - 1 - 2 - 3
 */
 const int  PIN_TEMP_SENSOR = 15;
 const int  PIN_LIGHT_SENSOR = 25;
-
+const int  PIN_OUT_BATT_SENSOR = 99;
 
 
 /*   INCLUDES & LIB SETUP
@@ -182,6 +182,29 @@ unsigned int get_light() {
 
   return (analogRead(PIN_LIGHT_SENSOR));
 
+}
+
+
+
+
+float get_out_batt() {
+  const float valorR1 = 30000.0; //VALOR DO RESISTOR 1 DO DIVISOR DE TENSÃO
+  const float valorR2 = 7500.0; // VALOR DO RESISTOR 2 DO DIVISOR DE TENSÃO
+
+  int leituraSensor = 0; //VARIÁVEL PARA ARMAZENAR A LEITURA DO PINO ANALÓGICO
+  float tensaoEntrada = 0.0; //VARIÁVEL PARA ARMAZENAR O VALOR DE TENSÃO DE ENTRADA DO SENSOR
+  float tensaoMedida = 0.0; //VARIÁVEL PARA ARMAZENAR O VALOR DA TENSÃO MEDIDA PELO SENSOR
+
+  pinMode(PIN_OUT_BATT_SENSOR, INPUT); //DEFINE O PINO COMO ENTRADA
+
+  leituraSensor = analogRead(PIN_OUT_BATT_SENSOR); //FAZ A LEITURA DO PINO ANALÓGICO E ARMAZENA NA VARIÁVEL O VALOR LIDO
+  tensaoEntrada = (leituraSensor * 5.0) / 4096.0; //VARIÁVEL RECEBE O RESULTADO DO CÁLCULO
+  tensaoMedida = tensaoEntrada / (valorR2 / (valorR1 + valorR2)); //VARIÁVEL RECEBE O VALOR DE TENSÃO DC MEDIDA PELO SENSOR
+
+  Serial.print("Tensão DC medida: "); //IMPRIME O TEXTO NA SERIAL
+  Serial.print(tensaoMedida, 2); //IMPRIME NA SERIAL O VALOR DE TENSÃO DC MEDIDA E LIMITA O VALOR A 2 CASAS DECIMAIS
+  Serial.println("V"); //IMPRIME O TEXTO NA SERIAL
+  return (tensaoMedida);
 }
 
 
@@ -400,6 +423,7 @@ void loop() {
   sensor_data[current_status.task].in_temp = get_in_temp();
   sensor_data[current_status.task].out_temp = get_out_temp();
   sensor_data[current_status.task].in_batt = get_in_batt();
+  sensor_data[current_status.task].in_batt = get_out_batt();
   sensor_data[current_status.task].light = get_light();
 
   write_sensor_data();
