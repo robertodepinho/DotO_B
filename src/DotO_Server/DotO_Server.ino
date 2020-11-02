@@ -1,6 +1,26 @@
+/*
+   DotO_Server
+*/
+
+
+//add log on computer file
+
+/*
+   OPERATION PARAMETERS
+*/
+
+const char* ssid = "";
+const char* password = "";
+
+
+/*
+   INCLUDES & LIBS
+*/
+
+
 #include <SPI.h>
 #include <LoRa.h>
-#include <Wire.h>  
+#include <Wire.h>
 
 #define SCK     5    // GPIO5  -- SX1278's SCK
 #define MISO    19   // GPIO19 -- SX1278's MISO
@@ -14,47 +34,86 @@ String rssi = "RSSI --";
 String packSize = "--";
 String packet ;
 
-
-void loraData(){
-  Serial.println(rssi);
-  Serial.println(packet);
-}
-
-void cbk(int packetSize) {
-  packet ="";
-  packSize = String(packetSize,DEC);
-  for (int i = 0; i < packetSize; i++) { packet += (char) LoRa.read(); }
-  rssi = "RSSI " + String(LoRa.packetRssi(), DEC) ;
-  loraData();
-}
-
-
-
-
-
+/*
+   WebServer
+*/
 
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
 
-const char* ssid = "";
-const char* password = "";
 
 WebServer server(80);
 
-const int led = 13;
+/*
+   STRUCTS
+*/
+#include <DotO_structs.h>
 
-void handleRoot() {
-  digitalWrite(led, 1);
-  //server.send(200, "text/plain", "hello from esp8266!");
-  //server.send(200, "text/plain", rssi);
-  server.send(200, "text/plain", packet);
-  digitalWrite(led, 0);
+
+
+/*
+   LoRa comm
+*/
+const int SENSOR_DATA_NUM = 4;
+
+struct doto_packet {
+  doto_status_type doto_status;
+  sensor_data_type sensor_data[SENSOR_DATA_NUM];
+};
+
+
+void loraData() {
+  Serial.println(rssi);
+  Serial.println(packet);
 }
 
+void cbk(int packetSize) {
+
+  if (packetSize == sizeof(doto_packet)) {
+    packet = "DotO packet";
+    LoRa.readBytes((uint8_t *) &doto_packet, packetSize);
+  } else {
+    packet = "";
+    packSize = String(packetSize, DEC);
+    for (int i = 0; i < packetSize; i++) {
+      packet += (char) LoRa.read();
+    }
+
+  }
+  rssi = "RSSI " + String(LoRa.packetRssi(), DEC) ;
+  loraData();
+}
+
+
+void handleRoot() {
+  //server.send(200, "text/plain", packet);
+
+  char temp[400];
+  int sec = millis() / 1000;
+  int min = sec / 60;
+  int hr = min / 60;
+
+  snprintf(temp, 400, "<html>\
+  <head>\
+    <meta http-equiv='refresh' content='5'/>\
+    <title>ESP32 Demo</title>\
+    <style>\
+      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
+    </style>\
+  </head>\
+  <body>\
+    <h1>Hello from ESP32!</h1>\
+    <p>Uptime: %02d:%02d:%02d</p>\
+  </body>\
+</html>", hr, min % 60, sec % 60);
+  server.send(200, "text/html", temp);
+
+}
+
+
 void handleNotFound() {
-  digitalWrite(led, 1);
   String message = "File Not Found\n\n";
   message += "URI: ";
   message += server.uri();
@@ -67,12 +126,11 @@ void handleNotFound() {
     message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
   }
   server.send(404, "text/plain", message);
-  digitalWrite(led, 0);
 }
 
 void setup(void) {
   Serial.begin(115200);
-  while(!Serial);
+  while (!Serial);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   Serial.println("");
@@ -104,13 +162,13 @@ void setup(void) {
   Serial.println("HTTP server started");
 
 
-  
+
   Serial.begin(115200);
   while (!Serial);
   Serial.println();
   Serial.println("LoRa Receiver Callback");
-  SPI.begin(SCK,MISO,MOSI,SS);
-  LoRa.setPins(SS,RST,DI0);  
+  SPI.begin(SCK, MISO, MOSI, SS);
+  LoRa.setPins(SS, RST, DI0);
   if (!LoRa.begin(BAND)) {
     Serial.println("Starting LoRa failed!");
     while (1);
@@ -118,16 +176,18 @@ void setup(void) {
   //LoRa.onReceive(cbk);
   LoRa.receive();
   Serial.println("init ok");
-//  display.init();
-//  display.flipScreenVertically();  
-//  display.setFont(ArialMT_Plain_10);
-   
+  //  display.init();
+  //  display.flipScreenVertically();
+  //  display.setFont(ArialMT_Plain_10);
+
   delay(1500);
 }
 
 void loop(void) {
   int packetSize = LoRa.parsePacket();
-  if (packetSize) { cbk(packetSize);  }
+  if (packetSize) {
+    cbk(packetSize);
+  }
   delay(10);
   server.handleClient();
 }

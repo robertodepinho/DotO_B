@@ -5,7 +5,7 @@ typedef struct {
   
   
   unsigned int cycle_count = 0;
-  unsigned int data_index = 0;
+  //unsigned int data_index = 0;
   
   boolean eeprom_ok = false;
   boolean axp_ok = false;
@@ -25,12 +25,12 @@ void dump_status(doto_status_type  st) {
   Serial.println(st.task);
   Serial.print("Cycle count:");
   Serial.println(st.cycle_count);
-  Serial.print("Data index:");
-  Serial.println(st.data_index);
+  //Serial.print("Data index:");
+  //Serial.println(st.data_index);
   Serial.print("Init Ok  eeprom,axp,lora,rtc,out_temp:");
   Serial.print(st.eeprom_ok);Serial.print(st.axp_ok);Serial.print(st.lora_ok);
   Serial.print(st.rtc_ok);Serial.println(st.out_temp_ok);
-  
+  Serial.println("**** END STATUS ****");
   
 }
 
@@ -38,7 +38,8 @@ void dump_status(doto_status_type  st) {
 // SENSOR DATA STRUCT //
 typedef struct {
   
-  unsigned int index = 0;
+  //unsigned int index = 0;
+  DateTime date_time;
   
   boolean tx_ok = false;
   boolean tx_lora = false;
@@ -47,7 +48,6 @@ typedef struct {
   
   float in_temp = 1e-20;
   float out_temp = 1e-20;
-  DateTime date_time;
   float in_batt = 1e-20;
   unsigned int light;
   
@@ -72,12 +72,16 @@ void dump_date_time(DateTime now){
 
 void dump_sensor_data(sensor_data_type sd) {
   Serial.println("-----");
-  Serial.print("Index:");
-  Serial.println(sd.index);
+  
+  //Serial.print("Index:");
+  //Serial.println(sd.index);
+  
   Serial.print("DateTime:");
   dump_date_time(sd.date_time);
+  
   Serial.print("TX all, lora, lorawan, spot:");
   Serial.print(sd.tx_ok); Serial.print(sd.tx_lora); Serial.print(sd.tx_lorawan);  Serial.println(sd.tx_spot);
+  
   Serial.print("Internal Temp:");
   Serial.println(sd.in_temp);
   Serial.print("External Temp:");

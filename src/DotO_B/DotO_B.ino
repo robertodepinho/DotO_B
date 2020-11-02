@@ -5,7 +5,7 @@
 const boolean INITIAL_MODE = false;  //Set to true for memory cleanup - 1st time run
 const int LONG_SLEEP = 5;  //in minutes - 12h = 720
 const int SHORT_SLEEP = 1; //in minutes - 3h = 180
-const int DEBUG_LEVEL = 2; //0 - 1 - 2 - 3
+const int DEBUG_LEVEL = 3; //0 - 1 - 2 - 3
 
 
 /*
@@ -86,13 +86,19 @@ const byte TASK_CYCLE_MAX = 3;
 
 
 /*
-    GLOBAL STATUS & DATA
+   GLOBAL STATUS & DATA
+   EEPROM MAP
+   0 - doto_status
+   2*sizeof(doto_status_type) - sensor_data array
 */
-
+const int SENSOR_DATA_NUM = TASK_CYCLE_MAX + 1;
+const int SENSOR_DATA_ADDR = 2 * sizeof(doto_status_type);
 
 doto_status_type last_status;
 doto_status_type current_status;
-sensor_data_type sensor_data;
+sensor_data_type sensor_data[SENSOR_DATA_NUM];
+
+
 
 // LoRa PACKET STRUCT //
 
@@ -165,7 +171,7 @@ float get_out_temp() {
   if (current_status.out_temp_ok) {
     long start = millis();
     out_temp_sensor.requestTemperatures();
-    while (!out_temp_sensor.isConversionComplete() & (millis()-start) < 10000);
+    while (!out_temp_sensor.isConversionComplete() & (millis() - start) < 10000);
     float temperature = out_temp_sensor.getTempC();
     return (temperature);
   } else return (-999);
@@ -182,40 +188,43 @@ unsigned int get_light() {
 void write_sensor_data() {
   if (current_status.eeprom_ok) {
 
-    sensor_data.index = current_status.data_index;
-    current_status.data_index++;
-    if (current_status.data_index > MAX_INDEX) current_status.data_index = 0;
-
-    unsigned long sensor_data_addr = get_sensor_data_addr(sensor_data.index);
-    Serial.print("write addr:");
-    Serial.println(sensor_data_addr);
-    Serial.println(EEPROM.writeBytes(sensor_data_addr, &sensor_data, sizeof(sensor_data_type)));
+    //sensor_data.index = current_status.data_index;
+    //current_status.data_index++;
+    //if (current_status.data_index > MAX_INDEX) current_status.data_index = 0;
+    //unsigned long sensor_data_addr = get_sensor_data_addr(sensor_data.index);
+    //Serial.print("write addr:");
+    //Serial.println(sensor_data_addr);
+    //Serial.println(EEPROM.writeBytes(sensor_data_addr, &sensor_data, sizeof(sensor_data_type)));
+    Serial.print("Writing Sensor data:");
+    Serial.println(EEPROM.writeBytes(SENSOR_DATA_ADDR, sensor_data, SENSOR_DATA_NUM * sizeof(sensor_data_type)));
     EEPROM.commit();
   }
 }
 
-unsigned long get_sensor_data_addr(unsigned int data_index) {
+/*
+  unsigned long get_sensor_data_addr(unsigned int data_index) {
   unsigned long  sensor_data_addr = 2 * sizeof(doto_status_type) + 0 + data_index * sizeof(sensor_data_type);
   return (sensor_data_addr);
-}
-
+  }
+*/
 
 void dump_all_sensor_data() {
 
-  char buffer_record[sizeof(sensor_data_type)];
-  for (int i = 0; i <= current_status.data_index; i++) {
-    if (current_status.eeprom_ok) {
+  sensor_data_type buffer_record[SENSOR_DATA_NUM * sizeof(sensor_data_type)];
+
+  if (current_status.eeprom_ok) {
+    EEPROM.readBytes(SENSOR_DATA_ADDR, &sensor_data, SENSOR_DATA_NUM * sizeof(sensor_data_type));
+    for (int i = 0; i < SENSOR_DATA_NUM; i++) {
       Serial.print("i:");
       Serial.println(i);
-      sensor_data_type sd;
-      Serial.print("readaddr:");
-      Serial.println(get_sensor_data_addr(i));
-      EEPROM.readBytes(get_sensor_data_addr(i), &sd, sizeof(sensor_data_type));
-      dump_sensor_data(sd);
+      dump_sensor_data(buffer_record[i]);
     }
+
   }
 
 }
+
+
 
 
 /*
@@ -223,15 +232,19 @@ void dump_all_sensor_data() {
 */
 
 void update_status() {
+
   current_status.previous_task = last_status.task;
   current_status.cycle_count = last_status.cycle_count + 1;
-  current_status.data_index = last_status.data_index;
+
+  //current_status.data_index = last_status.data_index;
+
+
   // if(last_task = TASK_UNKNOWN) current_task = TASK_TX else current_task = last_task + 1
   if (last_status.task == TASK_UNKNOWN) {
     current_status.task = TASK_TX;
   } else {
     current_status.task = last_status.task + 1;
-    if (current_status.task > TASK_CYCLE_MAX) current_status.task = 0;
+    if (current_status.task > TASK_CYCLE_MAX) current_status.task = TASK_TX;
   }
   dump_status(current_status);
 }
@@ -249,15 +262,18 @@ void write_status() {
 /*
    LORA
 */
-void send_lora(doto_status_type doto_status, sensor_data_type sensor_data ) {
+void send_lora(doto_status_type doto_status, sensor_data_type sensor_data[] ) {
   Serial.print("Sending LoRa:");
   Serial.println(LoRa.beginPacket());
-  Serial.println(LoRa.print("DotO_B"));
+  //Serial.println(LoRa.print("DotO_B"));
   Serial.println(
     LoRa.write((uint8_t*)&doto_status, sizeof(doto_status_type))
   );
+  Serial.println(
+    LoRa.write((uint8_t*)sensor_data, SENSOR_DATA_NUM * sizeof(sensor_data_type))
+  );
   Serial.println(LoRa.endPacket());
-
+  Serial.println("Bytes sent");
 }
 
 
@@ -268,7 +284,8 @@ void initial_setup() {
 
   doto_status_type initial_status;
   EEPROM.begin(EEPROM_SIZE);
-  EEPROM.writeBytes(0, &initial_status, sizeof(initial_status));
+  EEPROM.writeBytes(0, &initial_status, sizeof(doto_status_type));
+  EEPROM.writeBytes(SENSOR_DATA_ADDR, sensor_data, SENSOR_DATA_NUM * sizeof(sensor_data_type));
   EEPROM.commit();
 
 }
@@ -280,6 +297,7 @@ void setup() {
     while (!Serial);
   }
   Serial.println();
+  delay(100);
 
   if (INITIAL_MODE == true) {
     initial_setup();
@@ -295,7 +313,7 @@ void setup() {
   Serial.print("sensor_data_type:");
   Serial.println(sizeof(sensor_data_type));
   Serial.println("**** END MEMORY INIT");
-  
+
 
   //LORA
   Serial.println("LoRa Begin");
@@ -358,7 +376,7 @@ void setup() {
   axp.setPowerOutPut(AXP192_EXTEN, AXP202_ON);
   axp.setPowerOutPut(AXP192_DCDC1, AXP202_ON);
 
-  
+
 
 }
 
@@ -366,22 +384,27 @@ void setup() {
 
 void loop() {
 
+
   // A - GET LAST DotO LAST STATUS & SET TASK
   //add   // if(last_tx_time > 12hs ago) current_task = TASK_TX
-  if (current_status.eeprom_ok) EEPROM.readBytes(0, &last_status, sizeof(doto_status_type));
+  if (current_status.eeprom_ok) {
+    EEPROM.readBytes(0, &last_status, sizeof(doto_status_type));
+    EEPROM.readBytes(SENSOR_DATA_ADDR, &sensor_data, SENSOR_DATA_NUM * sizeof(sensor_data_type));
+  }
+
   update_status();
 
 
   // B - GET SENSOR DATA
-  sensor_data.date_time = get_date_time();
-  sensor_data.in_temp = get_in_temp();
-  sensor_data.out_temp = get_out_temp();
-  sensor_data.in_batt = get_in_batt();
-  sensor_data.light = get_light();
-  
+  sensor_data[current_status.task].date_time = get_date_time();
+  sensor_data[current_status.task].in_temp = get_in_temp();
+  sensor_data[current_status.task].out_temp = get_out_temp();
+  sensor_data[current_status.task].in_batt = get_in_batt();
+  sensor_data[current_status.task].light = get_light();
+
   write_sensor_data();
 
-  if (DEBUG_LEVEL > 1) dump_sensor_data(sensor_data);
+  if (DEBUG_LEVEL > 1) dump_sensor_data(sensor_data[current_status.task]);
   if (DEBUG_LEVEL > 2) dump_all_sensor_data();
 
 
